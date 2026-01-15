@@ -1,13 +1,12 @@
 import freetype
 import argparse
+import os
 
 # =========================
 # Utility functions
 # =========================
 
 def make_thresholds(bpp):
-    if bpp >= 8:
-        return None
     levels = 1 << bpp
     step = 256 // levels
     return [step * i for i in range(1, levels)]
@@ -21,6 +20,7 @@ def gray_to_bpp(v, thresholds):
 def pack_pixels(pixels, bpp):
     """
     Pack pixels into bytes.
+    Example:
       1bpp → 8 pixels/byte
       2bpp → 4 pixels/byte
       4bpp → 2 pixels/byte
@@ -50,19 +50,19 @@ parser.add_argument("--font", required=True, help="Path to .ttf/.otf font file")
 parser.add_argument("--size", type=int, required=True, help="Font size in pixels")
 parser.add_argument("--first", type=int, default=32, help="First character code")
 parser.add_argument("--last", type=int, default=126, help="Last character code")
-parser.add_argument("--bpp", type=int, choices=[1, 2, 4, 8], default=2, help="Bits per pixel")
+parser.add_argument("--bpp", type=int, choices=[1, 2, 4], default=2, help="Bits per pixel")
 parser.add_argument("--name", default="font", help="Font symbol name")
 parser.add_argument("--out", default="font", help="Output filename base")
 
 args = parser.parse_args()
 
-FONT_FILE  = args.font
-FONT_SIZE  = args.size
-FIRST_CHAR = args.first
-LAST_CHAR  = args.last
-BPP        = args.bpp
-FONT_NAME  = args.name
-OUT_BASE   = args.out
+FONT_FILE   = args.font
+FONT_SIZE   = args.size
+FIRST_CHAR  = args.first
+LAST_CHAR   = args.last
+BPP         = args.bpp
+FONT_NAME   = args.name
+OUT_BASE    = args.out
 
 OUT_C = OUT_BASE + ".c"
 OUT_H = OUT_BASE + ".h"
@@ -87,9 +87,7 @@ line_height = face.size.height >> 6
 # =========================
 
 for char_code in range(FIRST_CHAR, LAST_CHAR + 1):
-    face.load_char(chr(char_code),
-                   freetype.FT_LOAD_RENDER | freetype.FT_LOAD_TARGET_NORMAL)
-
+    face.load_char(chr(char_code), freetype.FT_LOAD_RENDER | freetype.FT_LOAD_TARGET_NORMAL)
     g = face.glyph
     bmp = g.bitmap
 
@@ -97,21 +95,12 @@ for char_code in range(FIRST_CHAR, LAST_CHAR + 1):
     height = bmp.rows
 
     pixels = []
-
     for y in range(height):
         for x in range(width):
             gray = bmp.buffer[y * bmp.pitch + x]
+            pixels.append(gray_to_bpp(gray, THRESHOLDS))
 
-            if BPP == 8:
-                pixels.append(gray)               # raw grayscale
-            else:
-                pixels.append(gray_to_bpp(gray, THRESHOLDS))
-
-    if BPP == 8:
-        packed = pixels[:]                         # 1 byte per pixel
-    else:
-        packed = pack_pixels(pixels, BPP)
-
+    packed = pack_pixels(pixels, BPP)
     bitmap_data.extend(packed)
 
     glyphs.append({
@@ -161,33 +150,12 @@ extern const font_t {FONT_NAME};
 #endif
 """)
 
-bitmap_size = len(bitmap_data)
-glyph_count = len(glyphs)
-
-glyph_struct_size = 2 + 1 + 1 + 1 + 1 + 1  # sizeof(font_glyph_t) = 7 bytes (packed)
-glyphs_size = glyph_count * glyph_struct_size
-
-font_struct_size = 7  # sizeof(font_t), assuming uint8_t fields + pointers not copied
-
-total_flash_size = bitmap_size + glyphs_size + font_struct_size
-estimated_ram_size = 0  # const data → flash only
-
 # =========================
 # Write source (.c)
 # =========================
 
 with open(OUT_C, "w") as f:
     f.write(f'#include "{OUT_H}"\n\n')
-
-    f.write("/* ================= Font Memory Usage =================\n")
-    f.write(f" * Glyph count        : {glyph_count}\n")
-    f.write(f" * Bitmap size        : {bitmap_size} bytes\n")
-    f.write(f" * Glyph table size   : {glyphs_size} bytes\n")
-    f.write(f" * Font struct size   : {font_struct_size} bytes\n")
-    f.write(f" * ----------------------------------------\n")
-    f.write(f" * Total FLASH usage  : {total_flash_size} bytes\n")
-    f.write(f" * Estimated RAM usage: {estimated_ram_size} bytes\n")
-    f.write(" * ==================================================== */\n\n")
 
     f.write(f"static const uint8_t {FONT_NAME}_Bitmap[] = {{\n")
     for i, b in enumerate(bitmap_data):
