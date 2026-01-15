@@ -161,13 +161,33 @@ extern const font_t {FONT_NAME};
 #endif
 """)
 
+bitmap_size = len(bitmap_data)
+glyph_count = len(glyphs)
+
+glyph_struct_size = 2 + 1 + 1 + 1 + 1 + 1  # sizeof(font_glyph_t) = 7 bytes (packed)
+glyphs_size = glyph_count * glyph_struct_size
+
+font_struct_size = 7  # sizeof(font_t), assuming uint8_t fields + pointers not copied
+
+total_flash_size = bitmap_size + glyphs_size + font_struct_size
+estimated_ram_size = 0  # const data → flash only
+
 # =========================
 # Write source (.c)
 # =========================
-total_bitmap_size = len(bitmap_data)
+
 with open(OUT_C, "w") as f:
     f.write(f'#include "{OUT_H}"\n\n')
-    f.write(f"/* Total font bitmap size: {total_bitmap_size} bytes */\n\n")
+
+    f.write("/* ================= Font Memory Usage =================\n")
+    f.write(f" * Glyph count        : {glyph_count}\n")
+    f.write(f" * Bitmap size        : {bitmap_size} bytes\n")
+    f.write(f" * Glyph table size   : {glyphs_size} bytes\n")
+    f.write(f" * Font struct size   : {font_struct_size} bytes\n")
+    f.write(f" * ----------------------------------------\n")
+    f.write(f" * Total FLASH usage  : {total_flash_size} bytes\n")
+    f.write(f" * Estimated RAM usage: {estimated_ram_size} bytes\n")
+    f.write(" * ==================================================== */\n\n")
 
     f.write(f"static const uint8_t {FONT_NAME}_Bitmap[] = {{\n")
     for i, b in enumerate(bitmap_data):
